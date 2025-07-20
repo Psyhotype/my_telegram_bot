@@ -40,51 +40,7 @@ class SchedulerBot:
         self.storage = storage
         self.schedule = schedule
         self.tz = ZoneInfo(self.config.timezone)
-        self._stop_event = threading.Event()
-        self._scheduler_thread: Optional[threading.Thread] = None
 
-    def _send_daily_schedule(self) -> None:
-        """Отправляет ежедневное расписание в привязанную тему."""
-        active_topic = self.storage.get_active_topic()
-        if not active_topic:
-            logger.warning("Пропуск ежедневной отправки: бот не привязан к теме.")
-            return
-
-        chat_id = active_topic['chat_id']
-        thread_id = active_topic['thread_id']
-
-        try:
-            now = datetime.now(self.tz)
-            day_index = now.weekday()
-            message_text = self.schedule.get_schedule_for_day(day_index)
-            if not message_text:
-                message_text = "На сегодня расписание не найдено."
-
-            self.telebot.send_message(chat_id, message_text, message_thread_id=thread_id)
-            self.storage.set_last_sent_date(now.strftime("%Y-%m-%d"))
-            logger.info(f"Расписание успешно отправлено в тему {thread_id} чата {chat_id}.")
-        except Exception as e:
-            logger.exception(f"Критическая ошибка при отправке сообщения в чат {chat_id}: {e}")
-
-    def _schedule_checker(self) -> None:
-        """Фоновый процесс, проверяющий время для отправки расписания."""
-        logger.info(f"Планировщик запущен. Проверка каждую минуту на {self.config.target_time} {self.config.timezone}.")
-        while not self._stop_event.is_set():
-            try:
-                now = datetime.now(self.tz)
-                last_sent = self.storage.get_last_sent_date()
-                is_time_to_send = now.strftime("%H:%M") == self.config.target_time
-                is_not_sent_today = last_sent != now.strftime("%Y-%m-%d")
-
-                if is_time_to_send and is_not_sent_today:
-                    logger.info("Время отправки настало. Запускаю отправку.")
-                    self._send_daily_schedule()
-            except Exception as e:
-                logger.exception("Ошибка в цикле планировщика.")
-
-            # Ожидаем 60 секунд или до сигнала остановки
-            self._stop_event.wait(60)
-        logger.info("Планировщик остановлен.")
 
     def _register_handlers(self) -> None:
         """Регистрирует все обработчики команд и колбэков."""
@@ -149,11 +105,6 @@ class SchedulerBot:
 
         self._register_handlers()
 
-        # daemon=True важно, чтобы основной поток не ждал этот поток при завершении,
-        # но мы все равно делаем .join() в методе stop() для чистого завершения.
-        self._scheduler_thread = threading.Thread(target=self._schedule_checker, daemon=True)
-        self._scheduler_thread.start()
-
         logger.info("Бот готов к работе и ожидает сообщений.")
         self.telebot.infinity_polling(skip_pending=True)
         logger.info("Бот прекратил работу.")
@@ -163,6 +114,4 @@ class SchedulerBot:
         logger.info("Получен сигнал на остановку бота...")
         self._stop_event.set()
         self.telebot.stop_polling()
-        if self._scheduler_thread and self._scheduler_thread.is_alive():
-            self._scheduler_thread.join(timeout=5)
         logger.info("Бот успешно остановлен.")
