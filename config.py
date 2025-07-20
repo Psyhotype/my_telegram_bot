@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env файла в окружение
-load_dotenv()
+# Определяем путь к .env файлу явно
+dotenv_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
 
 @dataclass(frozen=True)
